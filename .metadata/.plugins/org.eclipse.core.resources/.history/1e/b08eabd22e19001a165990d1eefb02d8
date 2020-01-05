@@ -1,0 +1,975 @@
+
+
+package jp.example.org;
+
+import java.io.IOException;
+
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletException;
+import javax.servlet.annotation.WebServlet;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+@WebServlet("/")
+public class MemoAppMain extends HttpServlet {
+
+    @Override
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp)
+            throws ServletException, IOException {
+
+        String view = "WebContent/WEB-INF/jsp/index.jsp";
+        RequestDispatcher dispatcher = req.getRequestDispatcher(view);
+        dispatcher.forward(req, resp);
+    }
+
+}
+
+
+doGet()では、/WEB-INF/jsp/index.jspにあるJSPファイルを読み込み、フォワード処理を使ってJSPの内容をブラウザで表示させる。
+
+なお、Servletの画面遷移にはフォワードとリダイレクトがあるそうな: リダイレクトとフォワードの違いを知る：JavaTips ～JSP／サーブレット編 - ＠IT
+
+これでTomcatを起動し、「コンテキスト定義を更新」すると、ブラウザからアクセスしたときにJSPの内容が表示されるはず。
+
+image.png
+
+image.png
+
+
+メモの入力処理の作成
+
+JSPで入力フォーム作成
+これは普通にhtmlのformタグで。
+ざっくりとこんな感じで。
+
+
+index.jsp
+
+<%@ page language="java" contentType="text/html; charset=UTF-8"
+ pageEncoding="UTF-8"%>
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Memo App</title>
+</head>
+<body>
+
+ <h1>memo app</h1>
+
+ <form method="post">
+  <input type="text" name="title" size="50"/>
+  <br/>
+  <textarea rows="5" cols="80" name="memo"></textarea>
+  <br/>
+  <input type="submit"/>
+ </form>
+
+</body>
+</html>
+
+
+通常だとformタグにはaction属性で、入力データの送信先を記述するが、今回は自分自身へpostする作りにするため省略
+
+image.png
+
+表示すると(なんの装飾もないため)こんな感じ。
+(Bootstrapとかでなんとかしたいですね…)
+
+
+Servletでpostされたデータを受け取る
+JSPで記述したformにactionを書かなかったので、post先は自分自身になる。
+つまり、すでに作成済みのMemoAppMainクラス内に、POSTの受け取り処理を作ればよい。
+
+MemoAppMainには作成済みのGETリクエストを処理するdoGet()があるが、これと同じようにPOSTリクエストを処理するdoPost()を作成する。
+
+とりあえずこんな感じ
+
+
+MemoAppMain.java
+
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp)
+            throws ServletException, IOException {
+        req.setCharacterEncoding("UTF-8");
+        System.out.println("title: " + req.getParameter("title"));
+        System.out.println("memo: " + req.getParameter("memo"));
+
+        // -- ここにDBへ保存処理 --
+
+        resp.sendRedirect(".");
+    }
+
+
+このメソッドは、POSTリクエストがあるとコールされる。
+POST時のパラメータ(HTTPリクエスト)は、名前の通りreqオブジェクトにセットされており、getParameter(String)でアクセスできる。
+このgetParameter(String)で指定する文字列の"title"と"memo"は、html formのフォーム名の文字列。
+
+今はまだPOSTされたテキストデータにアクセスしているだけなので、これをDBに保存する処理を作成する。
+setCharacterEncoding("UTF-8");は文字化け対策。
+ 参考： 日本語パラメータの対応(setCharacterEncoding) - リクエスト情報の取得 - サーブレット入門
+
+保存処理が終わったら画面を自分へリダイレクトするためにsendRedirect(".");をコールして、再読み込みしている。
+
+Todo: Tomcatの起動・終了と、この時点でのアプリの動作を説明してない
+
+
+DB接続処理
+MySQLを使用します。
+
+フォームに入力されたデータをDB保存するための処理を作成する。
+その前に、まずはJavaアプリケーションからDB操作を行うための、JDBCのセットアップを行う。
+
+JDBCの設定(JDBCドライバのアプリケーションへの組み込み)は手動でもできるけど、ここではMavenを使って導入する。
+
+Mavenは…ググってね♡
+
+
+TomcatプロジェクトをMavenに変換する
+プロジェクトの右クリックメニューから[構成]->[Mavenプロジェクトへ変換]を選択
+
+image.png
+
+新規POMの作成ダイアログが表示される。内容はデフォルトのままで[完了]でOK
+
+image.png
+
+すると、pom.xmlファイル(と出力用targetディレクトリ)が生成される。
+
+image.png
+
+
+pom.xml
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>memoapp</groupId>
+  <artifactId>memoapp</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <build>
+    <sourceDirectory>WEB-INF/src</sourceDirectory>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.5.1</version>
+        <configuration>
+          <source/>
+          <target/>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+
+
+また、Mavenプロジェクトへ変換すると、JREのバージョンやビルド先など、いくつかの設定が書き換えられるので修正する
+
+
+出力フォルダの修正
+プロジェクトのプロパティの[Javaのビルドパス]の[ソース]タブで、「デフォルト出力フォルダー」が[/target/classes]になっているので、[参照]ボタン押下して[/WEB-INF/classes]に変更する
+
+image.png
+
+image.png
+
+デフォルト値を変更したら、[ビルド・パス上のソース・フォルダー]のリストから/WEB-INF/srcの出力フォルダーを選択して[編集]を押下
+
+image.png
+
+出力フォルダの設定を「プロジェクトのデフォルト出力フォルダー」に設定
+
+image.png
+
+
+JREの変更
+image.png
+
+image.png
+
+設定を更新すると、変更前のファイルの削除確認がされるので、[はい]で削除する
+
+image.png
+
+もしwork以下に見覚えのないファイルが生成された場合は、それも削除してよい
+
+
+JDBCの導入
+Mavenリポジトリにブラウザでアクセスし、必要なファイルを探す。
+
+Maven Repository: Search/Browse/Explore
+
+image.png
+
+今回はmysql jdbcで検索。
+すると、[MySQL Connector/J]がヒットするのでリンクを開く
+https://mvnrepository.com/artifact/mysql/mysql-connector-java
+
+image.png
+
+リンクを開くとバージョン一覧が表示されるので、基本的にはMySQLのバージョンと同じものを選択する。今回は、MySQL 8.0.13を使用しているので、同じバージョンを選択。
+
+image.png
+
+リンク先にソースの記述例が記載されている。この[Maven]タブで表示されている内容を、プロジェクトのpom.xmlファイル内の<dependencies>～</dependencies>の中へ転記する。
+
+image.png
+
+ただし、Mavenプロジェクトへの変換直後など、初期状態では<dependencies>タグが存在しないので、(手動で記述するか)依存関係タブからUIで入力する。
+
+image.png
+
+依存関係の選択ダイアログに以下の通りにMavenのサイトで表示されていた値を入力して[OK]押下する
+
+image.png
+
+と、mysql-connector-javaが追加されるので、ファイルを保存する。
+
+image.png
+
+保存すると同時に必要ファイル類のダウンロードとビルドが開始され、ビルド完了するとプロジェクト構成も「Maven依存関係」などのファイルの追加などが行われる
+
+image.png
+
+この時点でpom.xmlの内容はこんな感じ
+
+
+pom.xml
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>memoapp</groupId>
+  <artifactId>memoapp</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <build>
+    <sourceDirectory>WEB-INF/src</sourceDirectory>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.5.1</version>
+        <configuration>
+          <source/>
+          <target/>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+  <dependencies>
+   <dependency>
+    <groupId>mysql</groupId>
+    <artifactId>mysql-connector-java</artifactId>
+    <version>8.0.13</version>
+   </dependency>
+  </dependencies>
+</project>
+
+
+
+データベースとユーザの作成
+アプリケーションで使用するDBとユーザを作成する。
+これはTomcatやJava関係なく、MySQL上で実施する。
+
+
+C:\Users\zaki>mysql -u root -p
+Enter password: ********
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 9
+Server version: 8.0.13 MySQL Community Server - GPL
+
+Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql>
+mysql> create database memoapp_db;
+Query OK, 1 row affected (0.06 sec)
+
+mysql> create user memoapp identified by "memoapp";
+Query OK, 0 rows affected (0.13 sec)
+
+mysql> grant all on memoapp_db.* to memoapp;
+Query OK, 0 rows affected (0.03 sec)
+
+mysql>
+
+
+
+JavaからDB接続
+
+        // -- ここにDBへ保存処理 --
+        Connection con = null;
+        Statement smt = null;
+
+        String url = "jdbc:mysql://localhost:3306/memoapp_db";
+        String user = "memoapp";
+        String pass = "memoapp";
+        try {
+            con = DriverManager.getConnection(url, user, pass);
+            smt = con.createStatement();
+            System.out.println("smt: " + smt);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        finally {
+            try {
+                con.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        // -- ここまでDB処理 --
+
+
+これでformからデータ登録しようとしても例外が発生する
+
+
+java.sql.SQLException: No suitable driver found for jdbc:mysql://localhost:3306/memoapp_db
+    at java.sql.DriverManager.getConnection(DriverManager.java:689)
+    at java.sql.DriverManager.getConnection(DriverManager.java:247)
+    at jp.example.org.MemoAppMain.doPost(MemoAppMain.java:44)
+    at javax.servlet.http.HttpServlet.service(HttpServlet.java:648)
+    at javax.servlet.http.HttpServlet.service(HttpServlet.java:729)
+:
+:
+
+
+これは、Eclipse上でのビルドのタイミングではMavenで導入したJDBCのjarファイルを参照できているため問題ないが、Tomcatでの実行時にはJDBCのjarファイルのパスは設定されないため。
+
+プロジェクトのプロパティでTomcatの設定の「開発用クラスローダーのクラスパス」画面で[Use SMART! Maven classpath]にチェックすれば、Mavenのライブラリ類もTomcat実行時に参照してくれる……？
+
+image.png
+
+と思ったんだけど、Tomcatがエラーこいてmemoappを動作してくれない
+
+
+重大: Begin event threw exception [土 12 01 13:38:19 JST 2018]
+重大: Parse error in context.xml for /memoapp [土 12 01 13:38:19 JST 2018]
+重大: 2行の126列目で発生しました [土 12 01 13:38:19 JST 2018]
+重大: 前のエラーのためにこのアプリケーションは利用できないようにマークします [土 12 01 13:38:19 JST 2018]
+重大: One or more components marked the context as not correctly configured [土 12 01 13:38:19 JST 2018]
+重大: 以前のエラーのためにコンテキストの起動が失敗しました [/memoapp] [土 12 01 13:38:19 JST 2018]
+
+
+ちなみにこの設定を行ってコンテキスト定義を更新するとmemoapp.xmlはこんな感じ
+
+
+memoapp.xml
+
+<Context path="/memoapp" reloadable="true" docBase="C:\Users\zaki\src\2018b-java-study\memoapp" workDir="C:\Users\zaki\src\java-study\memoapp\work" >
+    <Loader className="org.apache.catalina.loader.DevLoader" reloadable="true" debug="1" useSystemClassLoaderAsParent="false" />
+</Context>
+
+
+調べてみると「Tomcatプラグインに含まれるDevLoader.zipファイルをTOMCAT_HOME/server/libへjarにリネームしてコピーする」という情報が散見される
+•[eclipse]DevLoaderの罠: ひなぽの技術メモ
+•Mavenプロジェクトのデバッグ - 鳴兔の飼育日誌
+•EclipseでTomcatが動かない!! - QA@IT
+
+2018.12時点でのEclipse Tomcat Plugin 9.13では、DevLoader.zipファイルは直接含まれていなくて、net.sf.eclipse.tomcat_9.1.3.jarファイルの中にある(わかりにくい！)
+jarファイルは実体はzipなので、拡張子をリネームして展開して、中に入っているDevloaderTomcat7.jarを……あれ？Tomcat7しかないの？
+
+このファイル実際に使ってみても、Tomcat8では動かなかった
+
+
+重大: Begin event threw error [土 12 01 14:48:25 JST 2018]
+重大: ContainerBase.addChild: start:  [土 12 01 14:48:25 JST 2018]
+重大: 設定記述子 C:\pleiades\pleiades\tomcat\8\conf\Catalina\localhost\memoapp.xml を配備中のエラーです [土 12 01 14:48:25 JST 2018]
+
+
+EclipseのTomcatプラグイン内に必要なファイルはなさそうなので、ネットからダウンロードする。
+
+https://sourceforge.net/projects/tomcatplugin/files/additional/
+ ↑
+なんかつながらない…
+ので、こちらから。
+https://github.com/his-eg/tomcatplugin/blob/master/net.sf.eclipse.tomcat/DevLoaderTomcat8.jar
+
+このファイルをTomcatのlibディレクトリへコピーする。(Pleiadesの場合はpleiades\tomcat\8\lib\DevloaderTomcat7.jarあたり)
+
+これでTomcatを再起動すれば動作するはず…が、まだ同じエラーが出る
+
+
+java.sql.SQLException: No suitable driver found for jdbc:mysql://localhost:3306/memoapp_db
+
+
+(想像)このエラーは、実行の時点ではDevLoaderがどのクラスをロードするか決定されておらず、jdbcのjarがないと実行できないDriverManager.getConnection()に失敗している。
+なので直前にjdbcのjarをロードする処理を行えばよい。
+そこでClass.forName("com.mysql.cj.jdbc.Driver");を行う
+
+
+        // -- ここにDBへ保存処理 --
+        Connection con = null;
+        Statement smt = null;
+
+        //String url = "jdbc:mysql://localhost:3306/memoapp_db?useSSL=false&useUnicode=true&serverTimezone=UTC";
+        String url = "jdbc:mysql://localhost:3306/memoapp_db";
+        String user = "memoapp";
+        String pass = "memoapp";
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            con = DriverManager.getConnection(url, user, pass);
+            smt = con.createStatement();
+            System.out.println("smt: " + smt);
+        } catch (SQLException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+        finally {
+            try {
+                con.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        // -- ここまでDB処理 --
+
+
+というわけでDB接続部分のコードはこんな感じ。
+サンプルコードによく出てくるforName()の引数のクラス名は、現バージョンはFQCNが変更されていて「com.mysql.cj.jdbc.Driver」になっているので注意(cjが追加されてる)
+
+それと、開発用クラスローダーのクラスパス、org.eclipse.m2e.MAVEN2_CLASSPATH_CONTAINERを追加する必要があった
+
+image.png
+
+余談だけどこのDB接続の完了にたどり着くまで1週間かかりますた…
+
+※ スマートじゃないけどTomcatのライブラリ用のlibディレクトリ以下に直接mysql-connector-java-8.0.13.jarとprotobuf-java-3.6.1.jarをコピーするとEclipse側の設定は何もなくても動く。
+
+
+DB操作
+MySQLの操作のかんたんなまとめはこちらへどうぞ。
+(ゆるりと更新) MySQL / SQLメモ
+
+
+テーブルの設計と作成
+サンプルなのでシンプルに
+
+
+field
+
+type
+
+size
+
+not null
+
+comment
+
+etc
+
+
+memo_id int 11 ✓ ID auto_increment
+category int 11  カテゴリ
+title varchar 64  タイトル
+memo text   メモ
+create_date datetime   作成日
+modified_date datetime   更新日
+
+テーブルを作成するSQLの作成
+
+
+create table if not exists memo_data (
+    memo_id INT(11) auto_increment not null comment 'ID',
+    category INT(11) comment 'カテゴリ',
+    title VARCHAR(64) comment 'タイトル',
+    memo TEXT comment 'メモ',
+    create_date DATETIME comment '作成日',
+    modified_date DATETIME comment '更新日',
+    primary key (memo_id)
+)
+
+
+テーブルを作成するためのJavaコード(ちょっと適当だけど)
+
+
+    con = DriverManager.getConnection(url, user, pass);
+    smt = con.createStatement();
+    System.out.println("smt: " + smt);
+
+    String create_table = "create table if not exists memo_data (" +
+        "memo_id INT(11) auto_increment not null comment 'ID'," +
+        "category INT(11) comment 'カテゴリ'," +
+        "title VARCHAR(64) comment 'タイトル'," +
+        "memo TEXT comment 'メモ'," +
+        "create_date DATETIME comment '作成日'," +
+        "modified_date DATETIME comment '更新日'," +
+        "primary key (memo_id)" + ")";
+    // create table
+    smt.executeUpdate(create_table);
+
+
+これで実行すればテーブルが作成される
+
+
+mysql> show tables;
++----------------------+
+| Tables_in_memoapp_db |
++----------------------+
+| memo_data            |
++----------------------+
+1 row in set (0.01 sec)
+
+mysql> describe memo_data;
++---------------+-------------+------+-----+---------+----------------+
+| Field         | Type        | Null | Key | Default | Extra          |
++---------------+-------------+------+-----+---------+----------------+
+| memo_id       | int(11)     | NO   | PRI | NULL    | auto_increment |
+| category      | int(11)     | YES  |     | NULL    |                |
+| title         | varchar(64) | YES  |     | NULL    |                |
+| memo          | text        | YES  |     | NULL    |                |
+| create_date   | datetime    | YES  |     | NULL    |                |
+| modified_date | datetime    | YES  |     | NULL    |                |
++---------------+-------------+------+-----+---------+----------------+
+6 rows in set (0.00 sec)
+
+mysql>
+
+
+
+メモの保存処理
+doPost()のメソッドでreq.getParameter("title")とreq.getParameter("memo")で参照できるform入力データをテーブルに保存する処理を作成する。
+
+
+String form_title = req.getParameter("title");
+String form_memo = req.getParameter("memo");
+
+
+と変数に取得しておいて、INSERT文は以下のような感じで。
+
+
+insert into memo_data (
+    category, title, memo, create_date, modified_date
+) values (
+    0,
+    form_title,
+    form_memo,
+    cast(now() as datetime),
+    cast(now() as datetime)
+);
+
+
+レコードを保存するJavaコード
+
+
+    con = DriverManager.getConnection(url, user, pass);
+    smt = con.createStatement();
+
+    String form_title = req.getParameter("title");
+    String form_memo = req.getParameter("memo");
+
+    System.out.println("title: " + form_title);
+    System.out.println("text: " + form_memo);
+    String insert_memo = "insert into memo_data (" +
+            "category, title, memo, create_date, modified_date" +
+        ") values (" +
+            "0," +
+            "'" + form_title + "'," +
+            "'" + form_memo + "'," +
+            "cast(now() as datetime)," +
+            "cast(now() as datetime) " +
+        ");";
+    // レコード保存
+    smt.executeUpdate(insert_memo);
+
+
+image.png
+
+これでブラウザからテキスト入力してsubmitすると、DBに内容が保存される。
+
+(改行が入って見づらいけど)こんな感じ
+
+
+mysql> select * from memo_data;
++---------+----------+--------+----------------------------+---------------------+---------------------+
+| memo_id | category | title  | memo                       | create_date         | modified_date       |
++---------+----------+--------+----------------------------+---------------------+---------------------+
+|       1 |        0 | 買い物 | - カレー
+- やさい
+- にく | 2018-12-02 09:52:07 | 2018-12-02 09:52:07 |
++---------+----------+--------+----------------------------+---------------------+---------------------+
+1 row in set (0.00 sec)
+
+mysql>
+
+
+
+メモの取得と表示処理
+最後に保存したメモデータを画面に表示する処理を作成する。
+ 表示時なので、場所はdoGet()で実行する。
+
+ひとまず表示するカラムは
+•タイトル
+•メモ
+•更新日
+
+の3つで。
+
+まずはSELECT文
+
+
+select title, memo, modified_date from memo_data;
+
+
+Javaのソースは、createやinsertと違って実行結果を受け取る処理も作成する。
+
+
+    con = DriverManager.getConnection(url, user, pass);
+    smt = con.createStatement();
+
+    String select_memo = "select title, memo, modified_date from memo_data;";
+
+    ResultSet result = smt.executeQuery(select_memo);
+    while (result.next()) {
+        System.out.println("title: " + result.getString("title"));
+        System.out.println("memo: " + result.getString("memo"));
+        System.out.println("modify: " + result.getString("modified_date"));
+    }
+
+
+これでレコード情報が取得できる。
+ 次に、DBから取り出したメモデータを画面(JSP)へ渡す。
+
+
+メモの出力処理の作成
+今度はServletからJSPへデータを渡す(JSPでServletから受け取った値を参照する)処理を作成する。
+
+
+Servlet側
+まずexecuteQuery()の結果は、そのままだとConnectionのクローズ後では使用できないので、受け渡し用の変数を作成しその中へレコード情報をコピーする。
+
+
+    ArrayList<HashMap<String, String>> record_list = new ArrayList<>();
+
+    // 中略
+
+    ResultSet result = smt.executeQuery(select_memo);
+    while (result.next()) {
+        HashMap<String, String> record = new HashMap<>();
+        record.put("title", result.getString("title"));
+        record.put("memo", result.getString("memo"));
+        record.put("modified_date", result.getString("modified_date"));
+        record_list.add(record);
+    }
+
+
+そして、JSPへこのrecord_listを渡すために、Servletのリクエスト変数にsetAtribute()で値を設定する(HashMapのように、キー-値形式のデータ構造を渡すことができる)
+
+
+    req.setAttribute("record_list", record_list);
+
+    String view = "/WEB-INF/jsp/index.jsp";
+    RequestDispatcher dispatcher = req.getRequestDispatcher(view);
+    dispatcher.forward(req, resp);
+
+
+これで、JSPでrecord_listというキー名で参照できるようになる
+
+
+JSP側
+ServletでsetAttribute(KEY)でセットした値はrequest.getAttribute(KEY)で取り出せる。
+
+
+     ArrayList<HashMap<String, String>> list = (ArrayList<HashMap<String, String>>) request.getAttribute("record_list");
+
+
+取り出した後は普通のJavaのコーディングと同様に、html形式で出力する。
+
+
+     Iterator<HashMap<String, String>> i = list.iterator();
+     while (i.hasNext()) {
+         HashMap map = i.next();
+         out.println("<hr/>");
+         out.println("<div>" + map.get("title") + "</div>");
+         out.println("<div>" + map.get("modified_date") + "</div>");
+         out.println("<div>" + ((String) map.get("memo")).replace("\n", "<br/>") + "</div>");
+     }
+
+
+あと最初にimport文が必要
+
+
+<%@page import="java.util.Iterator"%>
+<%@page import="java.util.ArrayList"%>
+<%@page import="java.util.HashMap"%>
+
+
+全体のソースはこんな感じ
+
+
+<%@page import="java.util.Iterator"%>
+<%@page import="java.util.ArrayList"%>
+<%@page import="java.util.HashMap"%>
+<%@page language="java" contentType="text/html; charset=UTF-8"
+ pageEncoding="UTF-8"%>
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Memo App</title>
+</head>
+<body>
+
+ <h1>メモアプリ</h1>
+
+ <form method="post">
+  <input type="text" name="title" size="50" /> <br />
+  <textarea rows="5" cols="80" name="memo"></textarea>
+  <br /> <input type="submit" />
+ </form>
+
+ <%
+     ArrayList<HashMap<String, String>> list = (ArrayList<HashMap<String, String>>) request
+             .getAttribute("record_list");
+
+     Iterator<HashMap<String, String>> i = list.iterator();
+     while (i.hasNext()) {
+         HashMap map = i.next();
+         out.println("<hr/>");
+         out.println("<div>" + map.get("title") + "</div>");
+         out.println("<div>" + map.get("modified_date") + "</div>");
+         out.println("<div>" + ((String) map.get("memo")).replace("\n", "<br/>") + "</div>");
+     }
+ %>
+
+</body>
+</html>
+
+
+画面表示
+
+image.png
+
+なんとか表示と保存ができるようになりました。
+
+
+今後の課題•DBサーバのアドレス指定がハードコーディングされているため環境が変わるたびにリビルドが必要 ◦JNDIを使ったデータベース接続設定のXMLファイル定義
+
+•SQLインジェクション対策 ◦プレースホルダの使用とか
+
+•ローカル以外の環境で動かすためのwarファイルの作成 ◦たぶんEclipseの操作の世界
+◦関連情報: EclipseでサーバサイドJavaを作るときのプロジェクトとwarファイルのエクスポート
+
+•脱Eclipse ◦CLIビルドとか ◾Mavenプロジェクトとして作られたディレクトリ構成をしていれば、例えばDebian系Linuxならaptでmavenを入れれば、pom.xmlのあるディレクトリでmvn packageを実行すればwarファイルができる
+◾GitHubにソースをアップしたので参考
+
+◦あとやっぱIDEAかな
+
+•DBの初期化処理 ◦JPA(Java Persistence API)とか
+
+•DB処理をちゃんとクラス化 ◦DAOという考え方 ◾平たく言うとデータの入出力操作を別クラスに分離して実装することで、例えばDBがPostgresに変更した場合も呼び出し側の変更を最小にする、みたいな商用コードでよくやるやつ。
+◾DAO側のソース例(GitHub)
+◾呼び出し側のソースの変更点(GitHub)
+
+
+•Servlet -> JSPのデータ受け渡しをもう少しきれいに書く ◦JavaBeansを使う: JavaBeansとJSTLでJSP/Servletの記述を簡易にする
+
+•ループの表示部分をもう少し綺麗に書けないか ◦JSTL coreタグライブラリのforEachで: JavaBeansとJSTLでJSP/Servletの記述を簡易にする
+
+•フレームワーク対応 ◦Springとか
+
+•ログインとかセッションとか
+•画面の見た目 ◦Bootstrapとか…
+
+
+
+
+編集リクエスト
+
+ストック
+
+いいね14
+
+
+
+
+
+
+
+zaki-lknr
+
+@zaki-lknr
+
+メール系のインフラからweb系バックエンド(Perl)・組み込み(C)・業務系BREW(C)/Android(Java)アプリとか雑食性。最近はOpenShiftとAnsible
+
+フォロー
+
+
+ユーザー登録して、Qiitaをもっと便利に使ってみませんか。
+1.あなたにマッチした記事をお届けします
+ユーザーやタグをフォローすることで、あなたが興味を持つ技術分野の情報をまとめてキャッチアップできます
+
+2.便利な情報をあとで効率的に読み返せます
+気に入った記事を「ストック」することで、あとからすぐに検索できます
+
+
+より詳しく
+登録するログインする
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+コメント
+
+
+あなたもコメントしてみませんか :)
+ユーザ登録
+すでにアカウントを持っている方はログイン
+
+
+
+
+
+
+
+How developers code is here.
+
+
+
+
+
+Qiita
+
+
+About利用規約プライバシーガイドライン
+
+APIご意見ヘルプ広告掲載
+
+
+Increments
+
+
+About採用情報ブログ
+
+Qiita TeamQiita JobsQiita Zine
+
+© 2011-2019 Increments Inc.
